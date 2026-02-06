@@ -1,38 +1,85 @@
 /**
  * game.js - Game loop and state management
+ * 
+ * ARCHITECTURE: Fixed-Timestep Simulation Loop
+ * =============================================
+ * 
+ * The game uses a FIXED TIMESTEP (16.67ms = 60 ticks/second) for all gameplay
+ * logic, completely decoupled from the rendering frame rate.
+ * 
+ * This ensures DETERMINISM: given the same inputs, the simulation produces
+ * identical results regardless of whether the game runs at 30fps, 60fps, or 144fps.
+ * 
+ * LOOP STRUCTURE:
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │  requestAnimationFrame (variable rate: 30-144+ fps)         │
+ * │    │                                                        │
+ * │    ├─► accumulator += deltaTime                             │
+ * │    │                                                        │
+ * │    ├─► while (accumulator >= TICK_DURATION) [SIMULATION]    │
+ * │    │     ├─► Record input at localTick                      │
+ * │    │     ├─► Update player physics                          │
+ * │    │     ├─► Update all ghosts (same physics)               │
+ * │    │     ├─► Update world entities                          │
+ * │    │     ├─► Check win/reset conditions                     │
+ * │    │     ├─► localTick++                                    │
+ * │    │     └─► accumulator -= TICK_DURATION                   │
+ * │    │                                                        │
+ * │    └─► Renderer.render(state, alpha) [PRESENTATION]         │
+ * └─────────────────────────────────────────────────────────────┘
+ * 
+ * WHY THIS PREVENTS DESYNC:
+ * - All physics/logic runs in update() at exactly 60Hz
+ * - Input is sampled once per tick, not per frame
+ * - Ghosts read the same tick-indexed input array
+ * - No time-based calculations (only tick counts)
+ * - Consistent entity update order every tick
+ * 
+ * LOOP BOUNDARIES:
+ * - START: localTick = 0, player/ghosts at spawn, world reset
+ * - END: localTick >= LOOP_TICKS (1200) OR player reaches goal
+ * - RESET: Recording finalized, ghost created, localTick = 0
  */
 
 const Game = {
-    // Timing state
-    globalTick: 0,
-    localTick: 0,
-    loopIndex: 1,
-    accumulator: 0,
-    lastTime: 0,
+    // ═══════════════════════════════════════════════════════════
+    // SIMULATION STATE (modified only in update(), never in render)
+    // ═══════════════════════════════════════════════════════════
 
-    // Game state
-    isRunning: false,
-    isPaused: false,
-    levelComplete: false,
+    globalTick: 0,      // Total ticks since game start (never resets)
+    localTick: 0,       // Current tick within loop [0..LOOP_TICKS-1]
+    loopIndex: 1,       // Current loop number (1, 2, 3...)
 
-    // Entities
+    // Entities (state changes only in update())
     player: null,
     ghosts: [],
     entities: [],
 
-    // Replay
+    // Replay system
     currentRecording: null,
     recordings: [],
 
-    // Level
+    // Level data
     currentLevel: null,
 
-    // UI elements
+    // ═══════════════════════════════════════════════════════════
+    // FRAME STATE (timing for render loop, not simulation)
+    // ═══════════════════════════════════════════════════════════
+
+    accumulator: 0,     // Accumulated time for fixed timestep
+    lastTime: 0,        // Last frame timestamp
+
+    // Control flags
+    isRunning: false,
+    isPaused: false,
+    levelComplete: false,
+
+    // UI elements (updated per-tick for consistency)
     timerElement: null,
     loopCounterElement: null,
 
     /**
-     * Initialize the game
+     * Initialize the game with a level
      */
     init(level) {
         this.currentLevel = level;
@@ -43,67 +90,90 @@ const Game = {
         this.isRunning = true;
         this.lastTime = performance.now();
 
-        // Start game loop
-        requestAnimationFrame((time) => this.loop(time));
+        // Start the frame-driven loop
+        requestAnimationFrame((time) => this.frameLoop(time));
     },
 
+    // ═══════════════════════════════════════════════════════════
+    // FRAME LOOP (runs at display refresh rate: 30-144+ fps)
+    // Only handles timing and calls simulation + render
+    // ═══════════════════════════════════════════════════════════
+
     /**
-     * Main game loop with fixed timestep
+     * Frame loop - runs per display frame, drives simulation ticks
+     * This is the ONLY place that touches real time (performance.now)
      */
-    loop(currentTime) {
+    frameLoop(currentTime) {
         if (!this.isRunning) return;
 
+        // Calculate elapsed real time since last frame
         const deltaTime = currentTime - this.lastTime;
         this.lastTime = currentTime;
 
+        // Run simulation ticks if not paused
         if (!this.isPaused && !this.levelComplete) {
             this.accumulator += deltaTime;
 
-            // Fixed timestep updates
+            // Consume accumulated time in fixed-size chunks
+            // Each chunk = one simulation tick at exactly TICK_DURATION
             while (this.accumulator >= CONFIG.TICK_DURATION) {
-                this.update();
+                this.simulationTick();
                 this.accumulator -= CONFIG.TICK_DURATION;
             }
         }
 
-        // Render with interpolation alpha
+        // Render current state (alpha for optional interpolation)
         const alpha = this.accumulator / CONFIG.TICK_DURATION;
         Renderer.render(this, alpha);
 
-        // Continue loop
-        requestAnimationFrame((time) => this.loop(time));
+        // Continue frame loop
+        requestAnimationFrame((time) => this.frameLoop(time));
     },
 
+    // ═══════════════════════════════════════════════════════════
+    // SIMULATION TICK (runs at exactly 60Hz, deterministic)
+    // ALL gameplay logic happens here, NEVER in frameLoop
+    // ═══════════════════════════════════════════════════════════
+
     /**
-     * Fixed timestep update
+     * Single simulation tick - all gameplay logic
+     * Runs at exactly 60 ticks/second regardless of frame rate
+     * 
+     * UPDATE ORDER (critical for determinism):
+     * 1. Capture & record input
+     * 2. Update player
+     * 3. Update ghosts (in spawn order)
+     * 4. Update world entities
+     * 5. Check conditions
+     * 6. Advance tick counter
      */
-    update() {
-        // 1. Record player input (per-tick for determinism)
+    simulationTick() {
+        // ─── 1. INPUT CAPTURE ───────────────────────────────────
+        // Capture input state ONCE at the start of this tick
         const inputState = InputSystem.getState();
         ReplaySystem.recordTick(this.currentRecording, this.localTick, inputState);
 
-        // 2. Update player
+        // ─── 2. PLAYER UPDATE ───────────────────────────────────
         this.updatePlayer(inputState);
 
-        // 3. Update all ghosts
-        for (const ghost of this.ghosts) {
-            this.updateGhost(ghost);
+        // ─── 3. GHOST UPDATES ───────────────────────────────────
+        // Update in spawn order (oldest ghost first) for consistency
+        for (let i = 0; i < this.ghosts.length; i++) {
+            this.updateGhost(this.ghosts[i]);
         }
 
-        // 4. Update world entities (switches, doors, etc.)
+        // ─── 4. WORLD ENTITY UPDATES ────────────────────────────
         this.updateWorldEntities();
 
-        // 5. Check win condition
+        // ─── 5. CONDITION CHECKS ────────────────────────────────
         this.checkWinCondition();
+        this.updateUI();
 
-        // 6. Increment tick
+        // ─── 6. TICK ADVANCEMENT ────────────────────────────────
         this.localTick++;
         this.globalTick++;
 
-        // 7. Update UI
-        this.updateUI();
-
-        // 8. Check for loop reset
+        // ─── 7. LOOP BOUNDARY CHECK ─────────────────────────────
         if (this.localTick >= CONFIG.LOOP_TICKS) {
             this.endLoop(false);
         }
