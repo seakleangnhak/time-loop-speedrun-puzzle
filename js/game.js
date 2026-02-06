@@ -78,9 +78,9 @@ const Game = {
      * Fixed timestep update
      */
     update() {
-        // 1. Record player input
+        // 1. Record player input (per-tick for determinism)
         const inputState = InputSystem.getState();
-        this.currentRecording.inputs[this.localTick] = inputState;
+        ReplaySystem.recordTick(this.currentRecording, this.localTick, inputState);
 
         // 2. Update player
         this.updatePlayer(inputState);
@@ -126,7 +126,8 @@ const Game = {
     updateGhost(ghost) {
         if (!ghost.isActive) return;
 
-        const input = ghost.recording.inputs[this.localTick];
+        // Get recorded input for this tick (deterministic playback)
+        const input = ReplaySystem.getInputAtTick(ghost.recording, this.localTick);
         if (!input) {
             ghost.isActive = false;
             return;
@@ -199,15 +200,8 @@ const Game = {
     startNewLoop() {
         this.localTick = 0;
 
-        // Create new recording
-        this.currentRecording = {
-            id: `loop-${this.loopIndex}`,
-            loopIndex: this.loopIndex,
-            startTick: this.globalTick,
-            inputs: [],
-            reachedGoal: false,
-            endTick: 0
-        };
+        // Create new recording via ReplaySystem
+        this.currentRecording = ReplaySystem.createRecording(this.loopIndex);
 
         // Reset player
         this.player = Entities.createPlayer(
@@ -232,9 +226,8 @@ const Game = {
      * End current loop
      */
     endLoop(reachedGoal) {
-        // Finalize recording
-        this.currentRecording.endTick = this.localTick;
-        this.currentRecording.reachedGoal = reachedGoal;
+        // Finalize and store recording
+        ReplaySystem.finalizeRecording(this.currentRecording, this.localTick, reachedGoal);
         this.recordings.push(this.currentRecording);
 
         if (reachedGoal) {
