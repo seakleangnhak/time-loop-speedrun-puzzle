@@ -1,0 +1,151 @@
+/* ============================================
+   Time Loop - Speedrun Puzzle Game Styles
+   ============================================ */
+
+:root {
+    --bg-dark: #0a0a0f;
+    --bg-medium: #151520;
+    --accent-primary: #00d4ff;
+    --accent-secondary: #ff6b35;
+    --accent-success: #4ade80;
+    --accent-warning: #fbbf24;
+    --text-primary: #ffffff;
+    --text-secondary: #a0a0b0;
+    --glow-primary: 0 0 20px rgba(0, 212, 255, 0.5);
+    --glow-warning: 0 0 20px rgba(255, 107, 53, 0.5);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: var(--bg-dark);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+}
+
+#game-container {
+    position: relative;
+    background: var(--bg-medium);
+    border-radius: 12px;
+    box-shadow: 
+        0 0 40px rgba(0, 212, 255, 0.1),
+        inset 0 0 60px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+#game-canvas {
+    display: block;
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
+}
+
+/* UI Overlay */
+#ui-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+}
+
+#timer {
+    font-size: 48px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    text-shadow: var(--glow-primary);
+    font-variant-numeric: tabular-nums;
+    transition: color 0.3s, text-shadow 0.3s;
+}
+
+#timer.warning {
+    color: var(--accent-warning);
+    text-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
+}
+
+#timer.critical {
+    color: var(--accent-secondary);
+    text-shadow: var(--glow-warning);
+    animation: pulse 0.5s ease-in-out infinite;
+}
+
+#loop-counter {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.4);
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Animations */
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+}
+
+/* Level Complete Overlay */
+#level-complete {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+#level-complete.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#level-complete h2 {
+    font-size: 48px;
+    color: var(--accent-success);
+    text-shadow: 0 0 30px rgba(74, 222, 128, 0.5);
+    margin-bottom: 16px;
+}
+
+#level-complete p {
+    font-size: 18px;
+    color: var(--text-secondary);
+}
+
+/* Pause Overlay */
+#pause-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+#pause-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#pause-overlay span {
+    font-size: 32px;
+    color: var(--text-primary);
+    letter-spacing: 4px;
+}
